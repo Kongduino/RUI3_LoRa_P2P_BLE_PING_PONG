@@ -1,3 +1,12 @@
+#include "rak1901.h"
+
+// comment out this line if you don't have BLE
+// #define hasBLE
+
+/** Temperature & Humidity sensor **/
+rak1901 th_sensor;
+bool hasTH = false;
+float temp, humid;
 long startTime;
 // LoRa SETUP
 // The LoRa chip come pre-wired: all you need to do is define the parameters:
@@ -51,7 +60,7 @@ void recv_cb(rui_lora_p2p_recv_t data) {
   if (data.BufferSize == 0) {
     // This should not happen. But, you know...
     // will not != should not
-    Serial.println("Empty buffer.");
+    // Serial.println("Empty buffer.");
     return;
   }
   char msg[92];
@@ -59,11 +68,15 @@ void recv_cb(rui_lora_p2p_recv_t data) {
   Serial.print(msg);
   // Adafruit's Bluefruit connect is being difficult, and seems to require \r\n to fully receive a message..
   sprintf(msg, "[%d] RSSI %d SNR %d\r\n", data.BufferSize, data.Rssi, data.Snr);
+#ifdef hasBLE
   api.ble.uart.write((uint8_t*)msg, strlen(msg));
+#endif
   hexDump(data.Buffer, data.BufferSize);
   Serial.println("Sending to BLE");
   sprintf(msg, "%s\r\n", (char*)data.Buffer);
+#ifdef hasBLE
   api.ble.uart.write((uint8_t*)msg, strlen(msg));
+#endif
 }
 
 void send_cb(void) {
@@ -80,6 +93,12 @@ void sendPing() {
   sendMsg(payload);
 }
 
+void sendTH() {
+  char payload[32];
+  sprintf(payload, "T: %.2f C; H: %.2f%%", temp, humid);
+  sendMsg(payload);
+}
+
 void sendMsg(char* payload) {
   uint8_t ln = strlen(payload);
   api.lorawan.precv(0);
@@ -89,7 +108,43 @@ void sendMsg(char* payload) {
   ln = strlen(msg);
   Serial.print(msg);
   Serial.println("Sending to BLE...");
+#ifdef hasBLE
   api.ble.uart.write((uint8_t*)msg, ln);
+#endif
+}
+
+
+void handleCommands(char *cmd) {
+  if (cmd[0] != '/') return;
+  // If the string doesn't start with / – it's not a command
+  if (strcmp(cmd, "/ping") == 0) {
+    sendPing();
+    return;
+  }
+
+  if (cmd[1] == '>' && cmd[2] == ' ') {
+    sendMsg(cmd + 3);
+    return;
+  }
+
+#ifdef hasBLE
+  if (strcmp(cmd, "/whoami") == 0) {
+    char msg[64];
+    sprintf(msg, "Broadcast name: %s\n\r", api.ble.settings.broadcastName.get());
+    Serial.println(msg);
+    Serial.println("Sending to BLE");
+    uint16_t ln = strlen(msg);
+    api.ble.uart.write((uint8_t*)msg, ln);
+    return;
+  }
+#endif
+
+  if (strcmp(cmd, "/th") == 0) {
+    if (hasTH) sendTH();
+    else Serial.println("No TH module installed!");
+    return;
+  }
+
 }
 
 void setup() {
@@ -113,9 +168,27 @@ void setup() {
   Serial.println("0!");
   Serial.println("RAKwireless LoRaWan P2P BLE Example");
   Serial.println("------------------------------------------------------");
-  startTime = millis();
+  Wire.begin();
+  Wire.setClock(400000);
+  // Test for rak1901
+  Wire.beginTransmission(0x70);
+  byte error = Wire.endTransmission();
+  if (error == 0) {
+    Serial.println("Temperature & Humidity Sensor present!");
+    hasTH = true;
+    Serial.printf("RAK1901 init %s\r\n", th_sensor.init() ? "success" : "fail"); // Check if RAK1901 init success
+    th_sensor.update();
+    temp = th_sensor.temperature();
+    humid = th_sensor.humidity();
+  }
+
   Serial.println("P2P Start");
-  Serial.printf("Hardware ID: %s\r\n", api.system.chipId.get().c_str());
+  char HardwareID[16]; // nrf52840
+  strcpy(HardwareID, api.system.chipId.get().c_str());
+  Serial.printf("Hardware ID: %s\r\n", HardwareID);
+  if (strcmp(HardwareID, "nrf52840") == 0) {
+    Serial.println("BLE compatible!");
+  }
   Serial.printf("Model ID: %s\r\n", api.system.modelId.get().c_str());
   Serial.printf("RUI API Version: %s\r\n", api.system.apiVersion.get().c_str());
   Serial.printf("Firmware Version: %s\r\n", api.system.firmwareVersion.get().c_str());
@@ -137,6 +210,7 @@ void setup() {
   // api.system.restoreDefault();
   // This causes various issues. Including a reboot. Let's stay away from that.
 
+#ifdef hasBLE
   Serial6.begin(115200, RAK_CUSTOM_MODE);
   // If you want to read and write data through BLE API operations,
   // you need to set BLE Serial (Serial6) to Custom Mode
@@ -156,36 +230,22 @@ void setup() {
   api.ble.settings.broadcastName.set(ble_name, strlen(ble_name));
   api.ble.uart.start();
   api.ble.advertise.start(0);
-
+#endif
   // This version doesn't have an automatic Tx functionality:
   // YOU are in charge of sending, either via Serial or BLE.
-}
-
-void handleCommands(char *cmd) {
-  if (cmd[0] != '/') return;
-  // If the string doesn't start witj / it's not a command
-  if (strcmp(cmd, "/ping") == 0) {
-    sendPing();
-    return;
-  }
-
-  if (cmd[1] == '>' && cmd[2] == ' ') {
-    sendMsg(cmd + 3);
-    return;
-  }
-
-  if (strcmp(cmd, "/whoami") == 0) {
-    char msg[64];
-    sprintf(msg, "Broadcast name: %s\n\r", api.ble.settings.broadcastName.get());
-    Serial.println(msg);
-    Serial.println("Sending to BLE");
-    uint16_t ln = strlen(msg);
-    api.ble.uart.write((uint8_t*)msg, ln);
-    return;
-  }
+  startTime = millis();
 }
 
 void loop() {
+  if (millis() - startTime > 30000) {
+    if (hasTH) {
+      // Get sensor RAK1901 values
+      th_sensor.update();
+      temp = th_sensor.temperature();
+      humid = th_sensor.humidity();
+    }
+  }
+#ifdef hasBLE
   if (api.ble.uart.available()) {
     // store the incoming string into a buffer
     Serial.println("\nIncoming:");
@@ -204,6 +264,7 @@ void loop() {
     handleCommands(str1);
     // pass teh string to the command-handling fn
   }
+#endif
   if (Serial.available()) {
     Serial.println("\nIncoming:");
     char str1[256];

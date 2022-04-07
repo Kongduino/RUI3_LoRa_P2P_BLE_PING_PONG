@@ -2,9 +2,6 @@
 #include "rak1902.h"
 #include "rak1903.h"
 
-// comment out this line if you don't have BLE
-#define hasBLE
-
 /** Temperature & Humidity sensor **/
 rak1901 th_sensor;
 /** Air Pressure sensor **/
@@ -74,13 +71,13 @@ void recv_cb(rui_lora_p2p_recv_t data) {
   Serial.print(msg);
   // Adafruit's Bluefruit connect is being difficult, and seems to require \r\n to fully receive a message..
   sprintf(msg, "[%d] RSSI %d SNR %d\r\n", data.BufferSize, data.Rssi, data.Snr);
-#ifdef hasBLE
+#ifdef __RAKBLE_H__
   api.ble.uart.write((uint8_t*)msg, strlen(msg));
 #endif
   hexDump(data.Buffer, data.BufferSize);
   Serial.println("Sending to BLE");
   sprintf(msg, "%s\r\n", (char*)data.Buffer);
-#ifdef hasBLE
+#ifdef __RAKBLE_H__
   api.ble.uart.write((uint8_t*)msg, strlen(msg));
 #endif
 }
@@ -130,10 +127,10 @@ void sendMsg(char* payload) {
   // turn off reception – a little hackish, but without that send might fail.
   char msg[ln + 18];
   sprintf(msg, "Sending `%s`: %s\n\r", payload, api.lorawan.psend(ln, (uint8_t*)payload) ? "Success" : "Fail");
-  ln = strlen(msg);
   Serial.print(msg);
   Serial.println("Sending to BLE...");
-#ifdef hasBLE
+#ifdef __RAKBLE_H__
+  ln = strlen(msg);
   api.ble.uart.write((uint8_t*)msg, ln);
 #endif
 }
@@ -152,7 +149,7 @@ void handleCommands(char *cmd) {
     return;
   }
 
-#ifdef hasBLE
+#ifdef __RAKBLE_H__
   if (strcmp(cmd, "/whoami") == 0) {
     char msg[64];
     sprintf(msg, "Broadcast name: %s\n\r", api.ble.settings.broadcastName.get());
@@ -266,7 +263,7 @@ void setup() {
   // api.system.restoreDefault();
   // This causes various issues. Including a reboot. Let's stay away from that.
 
-#ifdef hasBLE
+#ifdef __RAKBLE_H__
   Serial6.begin(115200, RAK_CUSTOM_MODE);
   // If you want to read and write data through BLE API operations,
   // you need to set BLE Serial (Serial6) to Custom Mode
@@ -302,7 +299,7 @@ void loop() {
     }
     startTime = millis();
   }
-#ifdef hasBLE
+#ifdef __RAKBLE_H__
   if (api.ble.uart.available()) {
     // store the incoming string into a buffer
     Serial.println("\nIncoming:");

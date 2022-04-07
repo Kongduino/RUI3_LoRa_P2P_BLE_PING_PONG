@@ -1,12 +1,16 @@
 #include "rak1901.h"
+#include "rak1902.h"
 
 // comment out this line if you don't have BLE
-// #define hasBLE
+#define hasBLE
 
 /** Temperature & Humidity sensor **/
 rak1901 th_sensor;
-bool hasTH = false;
-float temp, humid;
+/** Air Pressure sensor **/
+rak1902 p_sensor;
+bool hasTH = false, hasPA = false;
+
+float temp, humid, HPa;
 long startTime;
 // LoRa SETUP
 // The LoRa chip come pre-wired: all you need to do is define the parameters:
@@ -99,6 +103,12 @@ void sendTH() {
   sendMsg(payload);
 }
 
+void sendPA() {
+  char payload[32];
+  sprintf(payload, "Pa: %.2f HPa", HPa);
+  sendMsg(payload);
+}
+
 void sendMsg(char* payload) {
   uint8_t ln = strlen(payload);
   api.lorawan.precv(0);
@@ -141,10 +151,15 @@ void handleCommands(char *cmd) {
 
   if (strcmp(cmd, "/th") == 0) {
     if (hasTH) sendTH();
-    else Serial.println("No TH module installed!");
+    else Serial.println("No RAK1901 module installed!");
     return;
   }
 
+  if (strcmp(cmd, "/pa") == 0) {
+    if (hasPA) sendPA();
+    else Serial.println("No RAK1902 module installed!");
+    return;
+  }
 }
 
 void setup() {
@@ -175,11 +190,21 @@ void setup() {
   byte error = Wire.endTransmission();
   if (error == 0) {
     Serial.println("Temperature & Humidity Sensor present!");
-    hasTH = true;
-    Serial.printf("RAK1901 init %s\r\n", th_sensor.init() ? "success" : "fail"); // Check if RAK1901 init success
+    hasTH = th_sensor.init();
+    Serial.printf("RAK1901 init %s\r\n", hasTH ? "success" : "fail"); // Check if RAK1901 init success
     th_sensor.update();
     temp = th_sensor.temperature();
     humid = th_sensor.humidity();
+  }
+
+  // Test for rak1902
+  Wire.beginTransmission(0x5C);
+  error = Wire.endTransmission();
+  if (error == 0) {
+    Serial.println("Pressure Sensor present!");
+    hasPA = p_sensor.init();
+    Serial.printf("RAK1902 init %s\r\n", hasPA ? "success" : "fail"); // Check if RAK1901 init success
+    HPa = p_sensor.pressure(MILLIBAR);
   }
 
   Serial.println("P2P Start");

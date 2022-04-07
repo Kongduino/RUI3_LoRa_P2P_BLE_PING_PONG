@@ -1,5 +1,6 @@
 #include "rak1901.h"
 #include "rak1902.h"
+#include "rak1903.h"
 
 // comment out this line if you don't have BLE
 #define hasBLE
@@ -8,9 +9,10 @@
 rak1901 th_sensor;
 /** Air Pressure sensor **/
 rak1902 p_sensor;
-bool hasTH = false, hasPA = false;
+rak1903 lux_sensor;
+bool hasTH = false, hasPA = false, hasLux = false;
 
-float temp, humid, HPa;
+float temp, humid, HPa, Lux;
 long startTime;
 // LoRa SETUP
 // The LoRa chip come pre-wired: all you need to do is define the parameters:
@@ -109,6 +111,15 @@ void sendPA() {
   sendMsg(payload);
 }
 
+void sendLux() {
+  if (lux_sensor.update()) {
+    Lux = lux_sensor.lux();
+    char payload[32];
+    sprintf(payload, "Lux: %.2f", Lux);
+    sendMsg(payload);
+  } else Serial.println("Couldn't update lux sensor!");
+}
+
 void sendMsg(char* payload) {
   uint8_t ln = strlen(payload);
   api.lorawan.precv(0);
@@ -160,6 +171,12 @@ void handleCommands(char *cmd) {
     else Serial.println("No RAK1902 module installed!");
     return;
   }
+
+  if (strcmp(cmd, "/lux") == 0) {
+    if (hasLux) sendLux();
+    else Serial.println("No RAK1903 module installed!");
+    return;
+  }
 }
 
 void setup() {
@@ -191,7 +208,7 @@ void setup() {
   if (error == 0) {
     Serial.println("Temperature & Humidity Sensor present!");
     hasTH = th_sensor.init();
-    Serial.printf("RAK1901 init %s\r\n", hasTH ? "success" : "fail"); // Check if RAK1901 init success
+    Serial.printf("RAK1901 init %s\r\n", hasTH ? "success" : "fail");
     th_sensor.update();
     temp = th_sensor.temperature();
     humid = th_sensor.humidity();
@@ -203,8 +220,18 @@ void setup() {
   if (error == 0) {
     Serial.println("Pressure Sensor present!");
     hasPA = p_sensor.init();
-    Serial.printf("RAK1902 init %s\r\n", hasPA ? "success" : "fail"); // Check if RAK1901 init success
+    Serial.printf("RAK1902 init %s\r\n", hasPA ? "success" : "fail");
     HPa = p_sensor.pressure(MILLIBAR);
+  }
+
+  // Test for rak1903
+  Wire.beginTransmission(0x44);
+  error = Wire.endTransmission();
+  if (error == 0) {
+    Serial.println("RAK1903 Light Sensor present!");
+    hasLux = lux_sensor.init();
+    Serial.printf("RAK1903 init %s\r\n", hasLux ? "success" : "fail");
+    Lux = lux_sensor.lux();
   }
 
   Serial.println("P2P Start");

@@ -299,8 +299,8 @@ void loop() {
       th_sensor.update();
       temp = th_sensor.temperature();
       humid = th_sensor.humidity();
-      startTime = millis();
     }
+    startTime = millis();
   }
 #ifdef hasBLE
   if (api.ble.uart.available()) {

@@ -100,18 +100,22 @@ void sendPing() {
 }
 
 void sendTH() {
+  // TH values are updated automatically every 30 seconds
   char payload[32];
   sprintf(payload, "T: %.2f C; H: %.2f%%", temp, humid);
   sendMsg(payload);
 }
 
 void sendPA() {
+  // Update HPa value then send.
+  HPa = p_sensor.pressure(MILLIBAR);
   char payload[32];
   sprintf(payload, "Pa: %.2f HPa", HPa);
   sendMsg(payload);
 }
 
 void sendLux() {
+  // Update lux value then send.
   if (lux_sensor.update()) {
     Lux = lux_sensor.lux();
     char payload[32];
@@ -295,6 +299,7 @@ void loop() {
       th_sensor.update();
       temp = th_sensor.temperature();
       humid = th_sensor.humidity();
+      startTime = millis();
     }
   }
 #ifdef hasBLE

@@ -1,14 +1,16 @@
 #include "rak1901.h"
 #include "rak1902.h"
 #include "rak1903.h"
+#include "ClosedCube_BME680.h"
 
 /** Temperature & Humidity sensor **/
 rak1901 th_sensor;
 /** Air Pressure sensor **/
 rak1902 p_sensor;
 rak1903 lux_sensor;
-bool hasTH = false, hasPA = false, hasLux = false;
+ClosedCube_BME680 bme680;
 
+bool hasTH = false, hasPA = false, hasLux = false, hasBME680 = false;
 float temp, humid, HPa, Lux;
 long startTime;
 // LoRa SETUP
@@ -104,8 +106,7 @@ void sendTH() {
 }
 
 void sendPA() {
-  // Update HPa value then send.
-  HPa = p_sensor.pressure(MILLIBAR);
+  // HPa value is updated automatically every 30 seconds
   char payload[32];
   sprintf(payload, "Pa: %.2f HPa", HPa);
   sendMsg(payload);
@@ -120,6 +121,20 @@ void sendLux() {
     sendMsg(payload);
   } else Serial.println("Couldn't update lux sensor!");
 }
+
+void sendBME680() {
+  ClosedCube_BME680_Status status = bme680.readStatus();
+  //  if (status.newDataFlag) {
+  double tp = bme680.readTemperature();
+  double pa = bme680.readPressure();
+  double hm = bme680.readHumidity();
+  char payload[32];
+  sprintf(payload, "T: %.2f C; H: %.2f%%; P: %.2f HPa", tp, hm, pa);
+  sendMsg(payload);
+  bme680.setForcedMode();
+  //  } else Serial.println("BME data not ready.");
+}
+
 
 void sendMsg(char* payload) {
   uint8_t ln = strlen(payload);
@@ -173,6 +188,12 @@ void handleCommands(char *cmd) {
     return;
   }
 
+  if (strcmp(cmd, "/bme") == 0) {
+    if (hasBME680) sendBME680();
+    else Serial.println("No RAK1906 module installed!");
+    return;
+  }
+
   if (strcmp(cmd, "/lux") == 0) {
     if (hasLux) sendLux();
     else Serial.println("No RAK1903 module installed!");
@@ -195,8 +216,8 @@ void setup() {
   }
   uint8_t x = 5;
   while (x > 0) {
-    delay(500);
     Serial.printf("%d, ", x--);
+    delay(500);
   } // Just for show
   Serial.println("0!");
   Serial.println("RAKwireless LoRaWan P2P BLE Example");
@@ -233,6 +254,25 @@ void setup() {
     hasLux = lux_sensor.init();
     Serial.printf("RAK1903 init %s\r\n", hasLux ? "success" : "fail");
     Lux = lux_sensor.lux();
+  }
+
+  // Test for rak1906
+  Wire.beginTransmission(0x76);
+  error = Wire.endTransmission();
+  if (error == 0) {
+    Serial.println("RAK1906 Light Sensor present!");
+    bme680.init(0x76); // I2C address: 0x76 or 0x77
+    bme680.reset();
+    Serial.print("Chip ID=0x");
+    uint8_t id = bme680.getChipID();
+    Serial.println(id, HEX);
+    hasBME680 = (id != 0xFF);
+    if (hasBME680) {
+      Serial.println("RAK1906 init success!");
+      bme680.setOversampling(BME680_OVERSAMPLING_X1, BME680_OVERSAMPLING_X2, BME680_OVERSAMPLING_X16);
+      bme680.setIIRFilter(BME680_FILTER_3);
+      bme680.setForcedMode();
+    } else Serial.println("RAK1906 init fail!");
   }
 
   Serial.println("P2P Start");
@@ -297,6 +337,9 @@ void loop() {
       temp = th_sensor.temperature();
       humid = th_sensor.humidity();
     }
+    if (hasPA) {
+      HPa = p_sensor.pressure(MILLIBAR);
+    }
     startTime = millis();
   }
 #ifdef __RAKBLE_H__
@@ -316,7 +359,7 @@ void loop() {
     str1[ix] = 0;
     Serial.println(str1);
     handleCommands(str1);
-    // pass teh string to the command-handling fn
+    // pass the string to the command-handling fn
   }
 #endif
   if (Serial.available()) {

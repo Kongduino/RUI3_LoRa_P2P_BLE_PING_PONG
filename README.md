@@ -18,6 +18,12 @@ It accepts seven commands, via Serial and/or BLE:
 
 Yes, the sketch recognizes the sensors on its own.
 
+### UPDATE
+
+I added recognition of an OLED and display, with very smooth scrolling.
+
+![smooth](oledpingpong.gif)
+
 ![Serial_Screenshot](Serial_Screenshot.png)
 ![BLE_Screenshot](BLE_Screenshot.jpg)
 ![Sensors_A](SensorsA.png)

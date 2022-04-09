@@ -14,7 +14,7 @@ ClosedCube_BME680 bme680;
 #define SCL_PIN WB_I2C1_SCL
 
 #define RESET_PIN -1
-#define FLIPPED 1
+#define FLIPPED 0
 #define INVERTED 0
 // Use bit banging to get higher speed output
 #define HARDWARE_I2C 1
@@ -175,7 +175,7 @@ void sendMsg(char* msg) {
   api.lorawan.precv(0);
   // turn off reception – a little hackish, but without that send might fail.
   char buff[ln + 20];
-  memset(buff, 0, ln+20);
+  memset(buff, 0, ln + 20);
   sprintf(buff, "Sending `%s`: %s\n\r", msg, api.lorawan.psend(ln, (uint8_t*)msg) ? "Success" : "Fail");
   Serial.print(buff);
   Serial.println("Sending to BLE...");
@@ -213,6 +213,11 @@ void handleCommands(char *cmd) {
   }
 #endif
 
+  if (strcmp(cmd, "/i2c") == 0) {
+    i2cScan();
+    return;
+  }
+
   if (strcmp(cmd, "/th") == 0) {
     if (hasTH) sendTH();
     else Serial.println("No RAK1901 module installed!");
@@ -249,6 +254,72 @@ void displayScroll(char *msg) {
     }
   }
   oledWriteString(&oled, 0, 0, posY, msg, FONT_8x8, 0, 1);
+}
+
+void i2cScan() {
+  byte error, addr;
+  char result[128];
+  uint8_t nDevices, ix = 0;
+  Serial.println("\nI2C scan in progress...");
+  nDevices = 0;
+  Serial.print("   |   .0   .1   .2   .3   .4   .5   .6   .7   .8   .9   .A   .B   .C   .D   .E   .F\n");
+  Serial.print("-------------------------------------------------------------------------------------\n0. |   .  ");
+  char memo[64];
+  char buff[32];
+  if (hasOLED) {
+    oledFill(&oled, 0, 1);
+    oledSetContrast(&oled, 127);
+    oledWriteString(&oled, 0, -1, -1, (char *)"LoRa p2p", FONT_16x16, 0, 1);
+    oledWriteString(&oled, 0, 0, 2, (char *)"Scanning", FONT_8x8, 0, 1);
+  }
+  posY = 3;
+  int posX = 0;
+  for (addr = 1; addr < 128; addr++) {
+    Wire.beginTransmission(addr);
+    error = Wire.endTransmission();
+    // Wire.beginTransmission(addr);
+    // error = Wire.endTransmission();
+    if (error == 0) {
+      Serial.print("0x");
+      if (addr < 16) Serial.write('0');
+      Serial.print(addr, HEX);
+      result[ix++] = addr;
+      if (nDevices > 0 && nDevices % 3 == 0) {
+        posY += 1;
+        posX = 0;
+        if (posY == 8) {
+          posY = 7;
+          for (uint8_t i = 0; i < 8; i++) {
+            oledScrollBuffer(&oled, 0, 127, 2, 7, 1);
+            oledDumpBuffer(&oled, NULL);
+            delay(40);
+          }
+        }
+      }
+      nDevices++;
+      if (hasOLED) {
+        sprintf(buff, "0x%2x ", addr);
+        oledWriteString(&oled, 0, posX, posY, buff, FONT_8x8, 0, 1);
+        posX += 40;
+      }
+    } else {
+      Serial.print("  . ");
+    } Serial.write(' ');
+    if (addr > 0 && (addr + 1) % 16 == 0 && addr < 127) {
+      Serial.write('\n');
+      Serial.print(addr / 16 + 1);
+      Serial.print(". | ");
+    }
+  }
+  Serial.println("\n-------------------------------------------------------------------------------------");
+  Serial.println("I2C devices found: " + String(nDevices));
+  sprintf(buff, "%d devices", nDevices);
+  for (uint8_t i = 0; i < 8; i++) {
+    oledScrollBuffer(&oled, 0, 127, 2, 7, 1);
+    oledDumpBuffer(&oled, NULL);
+  }
+  oledWriteString(&oled, 0, 0, 7, buff, FONT_8x8, 0, 1);
+  posY = 7;
 }
 
 void setup() {

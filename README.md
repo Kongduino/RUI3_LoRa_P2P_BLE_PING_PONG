@@ -5,8 +5,9 @@ A BLE-enabled PING-PONG LoRa P2P sketch for RUI3 / RAK4631 and RAK3172. But but 
 ![BLE](BLE.png)
 
 
-It accepts seven commands, via Serial and/or BLE:
+It accepts eight commands, via Serial and/or BLE:
 
+* `/i2c`: runs an I2C scan to see what's on the bus. Displays on the Serial monitor and OLED if available.
 * `/whomai`: get the BLE broadcast name. Useful when you have a few devices. You enter this command on Serial, and get the right name.
 * `/ping`: self-explanatory I believe...
 * `/> xxxxx`: send a custom message. Notice the space between `/>` and `xxxxxx`.

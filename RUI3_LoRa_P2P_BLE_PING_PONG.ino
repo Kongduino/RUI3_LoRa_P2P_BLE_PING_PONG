@@ -31,6 +31,7 @@ long startTime;
 // The LoRa chip come pre-wired: all you need to do is define the parameters:
 // frequency, SF, BW, CR, Preamble Length and TX power
 double myFreq = 868000000;
+float MSL = 1013.5;
 uint16_t counter = 0, sf = 12, bw = 125, cr = 0, preamble = 8, txPower = 22;
 
 void hexDump(uint8_t* buf, uint16_t len) {
@@ -186,6 +187,14 @@ void sendMsg(char* msg) {
   if (hasOLED) displayScroll(msg);
 }
 
+float calcAlt(float pressure) {
+  float A = pressure / MSL;
+  float B = 1 / 5.25588;
+  float C = pow(A, B);
+  C = 1.0 - C;
+  C = C / 0.0000225577;
+  return C;
+}
 
 void handleCommands(char *cmd) {
   if (cmd[0] != '/') return;
@@ -198,6 +207,44 @@ void handleCommands(char *cmd) {
   if (cmd[1] == '>' && cmd[2] == ' ') {
     sendMsg(cmd + 3);
     return;
+  }
+
+  if (strcmp(cmd, "/alt") == 0) {
+    float pressure = 0.0;
+    char buff[32];
+    if (hasPA) {
+      float alt = calcAlt(HPa);
+      sprintf(buff, "1902: %.2f m", alt);
+      Serial.println(buff);
+      if (hasOLED) displayScroll(buff);
+    }
+    if (hasBME680) {
+      ClosedCube_BME680_Status status = bme680.readStatus();
+      float alt = calcAlt(bme680.readPressure());
+      sprintf(buff, "bme: %.2f m", alt);
+      Serial.println(buff);
+      if (hasOLED) displayScroll(buff);
+    }
+    return;
+  }
+
+  if (strlen(cmd) > 7) {
+    // /msl 1013.75
+    if (cmd[1] == 'm' && cmd[2] == 's' && cmd[3] == 'l' && cmd[4] == ' ') {
+      float x = atof(cmd + 5);
+      if (x > 900.0 && x < 1100.0) {
+        MSL = x;
+        Serial.printf("MSL set to: %.2f HPa", MSL);
+        if (hasOLED) {
+          char msg[32];
+          sprintf(msg, "New MSL: %.2f HPa", MSL);
+          displayScroll(msg);
+        }
+      } else {
+        Serial.printf("Incorrect MSL: %.2f", x);
+      }
+      return;
+    }
   }
 
 #ifdef __RAKBLE_H__

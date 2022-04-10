@@ -6,5 +6,10 @@ A previous version of this sketch was selected as the official `LoRa_P2P` exampl
 
 For the kitchen sink app, see [here](https://github.com/Kongduino/RUI3_LoRa_Kitchen_Sink)...
 
+## RAK3172
+
 ![Screenshot1](Screenshot1.png)
+
+## RAK4631
+
 ![Screenshot2](Screenshot2.png)

@@ -202,47 +202,37 @@ void setup() {
 
 void loop() {
   if (millis() - startTime > 30000) {
-    if (hasTH) {
-      // Get sensor RAK1901 values
-      th_sensor.update();
-      temp = th_sensor.temperature();
-      humid = th_sensor.humidity();
-    }
-    if (hasPA) {
-      HPa = p_sensor.pressure(MILLIBAR);
-    }
-    startTime = millis();
-  }
 #ifdef __RAKBLE_H__
-  if (api.ble.uart.available()) {
-    // store the incoming string into a buffer
-    Serial.println("\nBLE in:");
-    char str1[256];
-    uint8_t ix = 0;
-    // with a 256-byte buffer and a uint8_t index
-    // you won't get a buffer overrun :-)
-    while (api.ble.uart.available()) {
-      char c = api.ble.uart.read();
-      if (c > 31) str1[ix++] = c;
-      // strip \r\n and the like
-      // this is ok because we expect text. You might want to adjust if you are sending binary data
+    if (api.ble.uart.available()) {
+      // store the incoming string into a buffer
+      Serial.println("\nBLE in:");
+      char str1[256];
+      uint8_t ix = 0;
+      // with a 256-byte buffer and a uint8_t index
+      // you won't get a buffer overrun :-)
+      while (api.ble.uart.available()) {
+        char c = api.ble.uart.read();
+        if (c > 31) str1[ix++] = c;
+        // strip \r\n and the like
+        // this is ok because we expect text. You might want to adjust if you are sending binary data
+      }
+      str1[ix] = 0;
+      Serial.println(str1);
+      handleCommands(str1);
+      // pass the string to the command-handling fn
     }
-    str1[ix] = 0;
-    Serial.println(str1);
-    handleCommands(str1);
-    // pass the string to the command-handling fn
-  }
 #endif
-  if (Serial.available()) {
-    Serial.println("\nIncoming:");
-    char str1[256];
-    uint8_t ix = 0;
-    while (Serial.available()) {
-      char c = Serial.read();
-      if (c > 31) str1[ix++] = c;
+    if (Serial.available()) {
+      Serial.println("\nIncoming:");
+      char str1[256];
+      uint8_t ix = 0;
+      while (Serial.available()) {
+        char c = Serial.read();
+        if (c > 31) str1[ix++] = c;
+      }
+      str1[ix] = 0;
+      Serial.println(str1);
+      handleCommands(str1);
     }
-    str1[ix] = 0;
-    Serial.println(str1);
-    handleCommands(str1);
   }
 }

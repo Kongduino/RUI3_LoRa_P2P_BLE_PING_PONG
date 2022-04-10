@@ -1,37 +1,8 @@
-#include "rak1901.h"
-#include "rak1902.h"
-#include "rak1903.h"
-#include "ClosedCube_BME680.h"
-#include <ss_oled.h>
-
-/** Temperature & Humidity sensor **/
-rak1901 th_sensor;
-/** Air Pressure sensor **/
-rak1902 p_sensor;
-rak1903 lux_sensor;
-ClosedCube_BME680 bme680;
-#define SDA_PIN WB_I2C1_SDA
-#define SCL_PIN WB_I2C1_SCL
-
-#define RESET_PIN -1
-#define FLIPPED 0
-#define INVERTED 0
-// Use bit banging to get higher speed output
-#define HARDWARE_I2C 1
-#define WIDTH 128
-#define HEIGHT 64
-int rc;
-SSOLED oled;
-
-static uint8_t ucBuffer[1024];
-bool hasOLED = true, hasTH = false, hasPA = false, hasLux = false, hasBME680 = false;
-float temp, humid, HPa, Lux;
 long startTime;
 // LoRa SETUP
 // The LoRa chip come pre-wired: all you need to do is define the parameters:
 // frequency, SF, BW, CR, Preamble Length and TX power
 double myFreq = 868000000;
-float MSL = 1013.5;
 uint16_t counter = 0, sf = 12, bw = 125, cr = 0, preamble = 8, txPower = 22;
 
 void hexDump(uint8_t* buf, uint16_t len) {
@@ -88,22 +59,13 @@ void recv_cb(rui_lora_p2p_recv_t data) {
   Serial.print(msg);
   // Adafruit's Bluefruit connect is being difficult, and seems to require \r\n to fully receive a message..
   sprintf(msg, "[%d] RSSI %d SNR %d\r\n", data.BufferSize, data.Rssi, data.Snr);
-  if (hasOLED) {
-    sprintf(msg, "LoRa msg: %d", data.BufferSize);
-    displayScroll(msg);
-    sprintf(msg, "RSSI: %d", data.Rssi);
-    displayScroll(msg);
-    sprintf(msg, "SNR: %d", data.Snr);
-    displayScroll(msg);
-    displayScroll((char*)data.Buffer);
-  }
 #ifdef __RAKBLE_H__
   api.ble.uart.write((uint8_t*)msg, strlen(msg));
 #endif
   hexDump(data.Buffer, data.BufferSize);
+#ifdef __RAKBLE_H__
   Serial.println("Sending to BLE");
   sprintf(msg, "%s\r\n", (char*)data.Buffer);
-#ifdef __RAKBLE_H__
   api.ble.uart.write((uint8_t*)msg, strlen(msg));
 #endif
 }
@@ -122,54 +84,6 @@ void sendPing() {
   sendMsg(payload);
 }
 
-void sendTH() {
-  // TH values are updated automatically every 30 seconds
-  char payload[48] = {0};
-  sprintf(payload, "%.2f C %.2f%%", temp, humid);
-  sendMsg(payload);
-}
-
-void sendPA() {
-  // HPa value is updated automatically every 30 seconds
-  char payload[48] = {0};
-  sprintf(payload, "%.2f HPa", HPa);
-  sendMsg(payload);
-}
-
-void sendLux() {
-  // Update lux value then send.
-  if (lux_sensor.update()) {
-    Lux = lux_sensor.lux();
-    char payload[48] = {0};
-    sprintf(payload, "Lux: %.2f", Lux);
-    sendMsg(payload);
-  } else Serial.println("Couldn't update lux sensor!");
-}
-
-void sendBME680() {
-  ClosedCube_BME680_Status status = bme680.readStatus();
-  //  if (status.newDataFlag) {
-  double tp = bme680.readTemperature();
-  double pa = bme680.readPressure();
-  double hm = bme680.readHumidity();
-  char payload[48] = {0};
-  sprintf(payload, "%.2f C %.2f%% %.2f HPa", tp, hm, pa);
-  if (hasOLED) {
-    hasOLED = false;
-    // we will display on 2 lines, separately
-    sendMsg(payload);
-    sprintf(payload, "%.2fC %.2f%%", tp, hm);
-    displayScroll(payload);
-    sprintf(payload, "%.2f HPa", pa);
-    displayScroll(payload);
-    hasOLED = true;
-  } else {
-    sendMsg(payload);
-  }
-  bme680.setForcedMode();
-  //  } else Serial.println("BME data not ready.");
-}
-
 
 void sendMsg(char* msg) {
   uint8_t ln = strlen(msg);
@@ -184,16 +98,6 @@ void sendMsg(char* msg) {
   ln = strlen(msg);
   api.ble.uart.write((uint8_t*)msg, ln);
 #endif
-  if (hasOLED) displayScroll(msg);
-}
-
-float calcAlt(float pressure) {
-  float A = pressure / MSL;
-  float B = 1 / 5.25588;
-  float C = pow(A, B);
-  C = 1.0 - C;
-  C = C / 0.0000225577;
-  return C;
 }
 
 void handleCommands(char *cmd) {
@@ -204,49 +108,6 @@ void handleCommands(char *cmd) {
     return;
   }
 
-  if (cmd[1] == '>' && cmd[2] == ' ') {
-    sendMsg(cmd + 3);
-    return;
-  }
-
-  if (strcmp(cmd, "/alt") == 0) {
-    float pressure = 0.0;
-    char buff[32];
-    if (hasPA) {
-      float alt = calcAlt(HPa);
-      sprintf(buff, "1902: %.2f m", alt);
-      Serial.println(buff);
-      if (hasOLED) displayScroll(buff);
-    }
-    if (hasBME680) {
-      ClosedCube_BME680_Status status = bme680.readStatus();
-      float alt = calcAlt(bme680.readPressure());
-      sprintf(buff, "bme: %.2f m", alt);
-      Serial.println(buff);
-      if (hasOLED) displayScroll(buff);
-    }
-    return;
-  }
-
-  if (strlen(cmd) > 7) {
-    // /msl 1013.75
-    if (cmd[1] == 'm' && cmd[2] == 's' && cmd[3] == 'l' && cmd[4] == ' ') {
-      float x = atof(cmd + 5);
-      if (x > 900.0 && x < 1100.0) {
-        MSL = x;
-        Serial.printf("MSL set to: %.2f HPa", MSL);
-        if (hasOLED) {
-          char msg[32];
-          sprintf(msg, "New MSL: %.2f HPa", MSL);
-          displayScroll(msg);
-        }
-      } else {
-        Serial.printf("Incorrect MSL: %.2f", x);
-      }
-      return;
-    }
-  }
-
 #ifdef __RAKBLE_H__
   if (strcmp(cmd, "/whoami") == 0) {
     char msg[64];
@@ -255,119 +116,11 @@ void handleCommands(char *cmd) {
     Serial.println("Sending to BLE");
     uint16_t ln = strlen(msg);
     api.ble.uart.write((uint8_t*)msg, ln);
-    if (hasOLED) displayScroll(api.ble.settings.broadcastName.get());
     return;
   }
 #endif
-
-  if (strcmp(cmd, "/i2c") == 0) {
-    i2cScan();
-    return;
-  }
-
-  if (strcmp(cmd, "/th") == 0) {
-    if (hasTH) sendTH();
-    else Serial.println("No RAK1901 module installed!");
-    return;
-  }
-
-  if (strcmp(cmd, "/pa") == 0) {
-    if (hasPA) sendPA();
-    else Serial.println("No RAK1902 module installed!");
-    return;
-  }
-
-  if (strcmp(cmd, "/bme") == 0) {
-    if (hasBME680) sendBME680();
-    else Serial.println("No RAK1906 module installed!");
-    return;
-  }
-
-  if (strcmp(cmd, "/lux") == 0) {
-    if (hasLux) sendLux();
-    else Serial.println("No RAK1903 module installed!");
-    return;
-  }
 }
 
-int posY = 1;
-void displayScroll(char *msg) {
-  posY += 1;
-  if (posY == 8) {
-    posY = 7;
-    for (uint8_t i = 0; i < 8; i++) {
-      oledScrollBuffer(&oled, 0, 127, 2, 7, 1);
-      oledDumpBuffer(&oled, NULL);
-    }
-  }
-  oledWriteString(&oled, 0, 0, posY, msg, FONT_8x8, 0, 1);
-}
-
-void i2cScan() {
-  byte error, addr;
-  char result[128];
-  uint8_t nDevices, ix = 0;
-  Serial.println("\nI2C scan in progress...");
-  nDevices = 0;
-  Serial.print("   |   .0   .1   .2   .3   .4   .5   .6   .7   .8   .9   .A   .B   .C   .D   .E   .F\n");
-  Serial.print("-------------------------------------------------------------------------------------\n0. |   .  ");
-  char memo[64];
-  char buff[32];
-  if (hasOLED) {
-    oledFill(&oled, 0, 1);
-    oledSetContrast(&oled, 127);
-    oledWriteString(&oled, 0, -1, -1, (char *)"LoRa p2p", FONT_16x16, 0, 1);
-    oledWriteString(&oled, 0, 0, 2, (char *)"Scanning", FONT_8x8, 0, 1);
-  }
-  posY = 3;
-  int posX = 0;
-  for (addr = 1; addr < 128; addr++) {
-    Wire.beginTransmission(addr);
-    error = Wire.endTransmission();
-    // Wire.beginTransmission(addr);
-    // error = Wire.endTransmission();
-    if (error == 0) {
-      Serial.print("0x");
-      if (addr < 16) Serial.write('0');
-      Serial.print(addr, HEX);
-      result[ix++] = addr;
-      if (nDevices > 0 && nDevices % 3 == 0) {
-        posY += 1;
-        posX = 0;
-        if (posY == 8) {
-          posY = 7;
-          for (uint8_t i = 0; i < 8; i++) {
-            oledScrollBuffer(&oled, 0, 127, 2, 7, 1);
-            oledDumpBuffer(&oled, NULL);
-            delay(40);
-          }
-        }
-      }
-      nDevices++;
-      if (hasOLED) {
-        sprintf(buff, "0x%2x ", addr);
-        oledWriteString(&oled, 0, posX, posY, buff, FONT_8x8, 0, 1);
-        posX += 40;
-      }
-    } else {
-      Serial.print("  . ");
-    } Serial.write(' ');
-    if (addr > 0 && (addr + 1) % 16 == 0 && addr < 127) {
-      Serial.write('\n');
-      Serial.print(addr / 16 + 1);
-      Serial.print(". | ");
-    }
-  }
-  Serial.println("\n-------------------------------------------------------------------------------------");
-  Serial.println("I2C devices found: " + String(nDevices));
-  sprintf(buff, "%d devices", nDevices);
-  for (uint8_t i = 0; i < 8; i++) {
-    oledScrollBuffer(&oled, 0, 127, 2, 7, 1);
-    oledDumpBuffer(&oled, NULL);
-  }
-  oledWriteString(&oled, 0, 0, 7, buff, FONT_8x8, 0, 1);
-  posY = 7;
-}
 
 void setup() {
   Serial.begin(115200, RAK_CUSTOM_MODE);
@@ -392,91 +145,13 @@ void setup() {
   Serial.println("------------------------------------------------------");
   Wire.begin();
   //Wire.setClock(400000);
-  // Test for OLED
-  Wire.beginTransmission(0x3c);
-  delay(100);
-  byte error = Wire.endTransmission();
-  if (error == 0) {
-    Serial.println("OLED present");
-    if (hasOLED) {
-      // the user wants OLED display
-      uint8_t uc[8];
-      rc = oledInit(&oled, OLED_128x64, 0x3c, FLIPPED, INVERTED, HARDWARE_I2C, SDA_PIN, SCL_PIN, RESET_PIN, 400000L);
-      if (rc != OLED_NOT_FOUND) {
-        oledSetBackBuffer(&oled, ucBuffer);
-        oledSetTextWrap(&oled, 1);
-        oledFill(&oled, 0, 1);
-        oledSetContrast(&oled, 127);
-        oledWriteString(&oled, 0, -1, -1, (char *)"LoRa p2p", FONT_16x16, 0, 1);
-      } else hasOLED = false;
-    } else {
-      Serial.println("But you specified you didn't want OLED display!");
-    }
-  } else hasOLED = false;
-  // Even if the user wanted it – since it ain't there, we set it to false.
-  // Test for rak1901
-  Wire.beginTransmission(0x70);
-  error = Wire.endTransmission();
-  if (error == 0) {
-    Serial.println("Temperature & Humidity Sensor present!");
-    hasTH = th_sensor.init();
-    Serial.printf("RAK1901 init %s\r\n", hasTH ? "success" : "fail");
-    th_sensor.update();
-    temp = th_sensor.temperature();
-    humid = th_sensor.humidity();
-    if (hasOLED) displayScroll("* rak1901");
-  }
-
-  // Test for rak1902
-  Wire.beginTransmission(0x5C);
-  error = Wire.endTransmission();
-  if (error == 0) {
-    Serial.println("Pressure Sensor present!");
-    hasPA = p_sensor.init();
-    Serial.printf("RAK1902 init %s\r\n", hasPA ? "success" : "fail");
-    HPa = p_sensor.pressure(MILLIBAR);
-    if (hasOLED) displayScroll("* rak1902");
-  }
-
-  // Test for rak1903
-  Wire.beginTransmission(0x44);
-  error = Wire.endTransmission();
-  if (error == 0) {
-    Serial.println("RAK1903 Light Sensor present!");
-    hasLux = lux_sensor.init();
-    Serial.printf("RAK1903 init %s\r\n", hasLux ? "success" : "fail");
-    Lux = lux_sensor.lux();
-    if (hasOLED) displayScroll("* rak1903");
-  }
-
-  // Test for rak1906
-  Wire.beginTransmission(0x76);
-  error = Wire.endTransmission();
-  if (error == 0) {
-    Serial.println("RAK1906 Light Sensor present!");
-    if (hasOLED) displayScroll("* rak1906");
-    bme680.init(0x76); // I2C address: 0x76 or 0x77
-    bme680.reset();
-    Serial.print("Chip ID=0x");
-    uint8_t id = bme680.getChipID();
-    Serial.println(id, HEX);
-    hasBME680 = (id != 0xFF);
-    if (hasBME680) {
-      Serial.println("RAK1906 init success!");
-      bme680.setOversampling(BME680_OVERSAMPLING_X1, BME680_OVERSAMPLING_X2, BME680_OVERSAMPLING_X16);
-      bme680.setIIRFilter(BME680_FILTER_3);
-      bme680.setForcedMode();
-    } else Serial.println("RAK1906 init fail!");
-  }
 
   Serial.println("P2P Start");
-  if (hasOLED) displayScroll("* P2P Start");
   char HardwareID[16]; // nrf52840
   strcpy(HardwareID, api.system.chipId.get().c_str());
   Serial.printf("Hardware ID: %s\r\n", HardwareID);
   if (strcmp(HardwareID, "nrf52840") == 0) {
     Serial.println("BLE compatible!");
-    if (hasOLED) displayScroll("* BLE available");
   }
   Serial.printf("Model ID: %s\r\n", api.system.modelId.get().c_str());
   Serial.printf("RUI API Version: %s\r\n", api.system.apiVersion.get().c_str());
@@ -542,7 +217,6 @@ void loop() {
   if (api.ble.uart.available()) {
     // store the incoming string into a buffer
     Serial.println("\nBLE in:");
-    // if (hasOLED) displayScroll("BLE in:");
     char str1[256];
     uint8_t ix = 0;
     // with a 256-byte buffer and a uint8_t index
@@ -555,14 +229,12 @@ void loop() {
     }
     str1[ix] = 0;
     Serial.println(str1);
-    if (hasOLED) displayScroll(str1);
     handleCommands(str1);
     // pass the string to the command-handling fn
   }
 #endif
   if (Serial.available()) {
     Serial.println("\nIncoming:");
-    // if (hasOLED) displayScroll("Serial in:");
     char str1[256];
     uint8_t ix = 0;
     while (Serial.available()) {
@@ -571,7 +243,6 @@ void loop() {
     }
     str1[ix] = 0;
     Serial.println(str1);
-    if (hasOLED) displayScroll(str1);
     handleCommands(str1);
   }
 }

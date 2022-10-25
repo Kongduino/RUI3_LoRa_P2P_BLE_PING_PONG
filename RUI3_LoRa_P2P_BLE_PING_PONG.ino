@@ -121,7 +121,6 @@ void handleCommands(char *cmd) {
 #endif
 }
 
-
 void setup() {
   Serial.begin(115200, RAK_CUSTOM_MODE);
   // RAK_CUSTOM_MODE disables AT firmware parsing
@@ -153,10 +152,11 @@ void setup() {
   if (strcmp(HardwareID, "nrf52840") == 0) {
     Serial.println("BLE compatible!");
   }
-  Serial.printf("Model ID: %s\r\n", api.system.modelId.get().c_str());
+  Serial.printf("Hardware ID: %s\r\n", api.system.chipId.get().c_str());
+  Serial.printf("Model ID: %s\r\n", api.system.hwModel.get().c_str());
   Serial.printf("RUI API Version: %s\r\n", api.system.apiVersion.get().c_str());
-  Serial.printf("Firmware Version: %s\r\n", api.system.firmwareVersion.get().c_str());
-  Serial.printf("AT Command Version: %s\r\n", api.system.cliVersion.get().c_str());
+  Serial.printf("Firmware Version: %s\r\n", api.system.firmwareVer.get().c_str());
+  Serial.printf("AT Command Version: %s\r\n", api.system.cliVer.get().c_str());
 
   // LoRa setup – everything else has been done for you. No need to fiddle with pins, etc
   Serial.printf("Set work mode to P2P: %s\r\n", api.lorawan.nwm.set(0) ? "Success" : "Fail");
